@@ -3,9 +3,69 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
 import 'package:newshive/routes/route_names.dart';
+import 'package:newshive/services/auth_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _isLoading = false;
+
+  void _handleLogin() async {
+    final username = _usernameController.text.trim();
+    final password = _passwordController.text;
+
+    if (username.isEmpty || password.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Username dan password harus diisi')),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await AuthService.login(username, password);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final token = data['body']['data']['token'];
+
+        if (token != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', token);
+
+          context.goNamed(RouteNames.main);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Token tidak ditemukan')),
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login gagal: ${response.body}')),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Terjadi kesalahan: $e')),
+      );
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -19,9 +79,14 @@ class LoginScreen extends StatelessWidget {
             SizedBox(height: 40.h),
             Image.asset('assets/images/login_illustration.jpg', height: 300.h),
             SizedBox(height: 20.h),
-            _InputField(icon: Icons.person_outline, hintText: 'Username'),
+            _InputField(
+              controller: _usernameController,
+              icon: Icons.person_outline,
+              hintText: 'Username',
+            ),
             SizedBox(height: 20.h),
             _InputField(
+              controller: _passwordController,
               icon: Icons.lock_outline,
               hintText: 'Password',
               obscureText: true,
@@ -42,19 +107,20 @@ class LoginScreen extends StatelessWidget {
             SizedBox(
               height: 50.h,
               child: ElevatedButton(
-                onPressed: () {
-                  context.pushNamed(RouteNames.main);
-                },
+                onPressed: _isLoading ? null : _handleLogin,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.blue,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12.r),
                   ),
                 ),
-                child: Text(
-                  'Login',
-                  style: TextStyle(fontSize: 16.sp, color: Colors.white),
-                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(
+                        'Login',
+                        style:
+                            TextStyle(fontSize: 16.sp, color: Colors.white),
+                      ),
               ),
             ),
             SizedBox(height: 20.h),
@@ -67,11 +133,10 @@ class LoginScreen extends StatelessWidget {
                     TextSpan(
                       text: 'Sign Up',
                       style: TextStyle(color: Colors.blue),
-                      recognizer:
-                          TapGestureRecognizer()
-                            ..onTap = () {
-                              context.pushNamed(RouteNames.register);
-                            },
+                      recognizer: TapGestureRecognizer()
+                        ..onTap = () {
+                          context.pushNamed(RouteNames.register);
+                        },
                     ),
                   ],
                 ),
@@ -88,16 +153,19 @@ class _InputField extends StatelessWidget {
   final IconData icon;
   final String hintText;
   final bool obscureText;
+  final TextEditingController controller;
 
   const _InputField({
     required this.icon,
     required this.hintText,
     this.obscureText = false,
+    required this.controller,
   });
 
   @override
   Widget build(BuildContext context) {
     return TextField(
+      controller: controller,
       obscureText: obscureText,
       decoration: InputDecoration(
         prefixIcon: Icon(icon, color: Colors.grey),
